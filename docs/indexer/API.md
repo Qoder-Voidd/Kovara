@@ -1,111 +1,404 @@
-# Indexer API Contract
+# Linkora Indexer REST API
 
-## Search Endpoint
+This document describes every REST endpoint exposed by the Linkora indexer service.
 
-### POST /api/search/posts
+**Base URL:** `http://localhost:3001` (development) or the configured `INDEXER_URL` in production.
 
-Search posts by keyword content.
+All responses use `Content-Type: application/json`. All timestamps are Unix epoch seconds. All token amounts are raw integer strings to avoid floating-point loss.
 
-#### Request
+---
+
+## Table of Contents
+
+- [Health](#health)
+- [Posts](#posts)
+  - [Search posts](#post-apisearchposts)
+  - [Get post by ID](#get-apipostsid)
+  - [Get posts by author](#get-apipostsauthoraddress)
+- [Profiles](#profiles)
+  - [Get profile](#get-apiprofilesaddress)
+  - [List profiles](#get-apiprofiles)
+- [Social graph](#social-graph)
+  - [Get following](#get-apisocialgraphaddressfollowing)
+  - [Get followers](#get-apisocialgraphaddressfollowers)
+- [Tips](#tips)
+  - [Get tips for a post](#get-apipoststipsid)
+  - [Get tips sent by an address](#get-apitipssenderaddress)
+- [Pools](#pools)
+  - [Get pool state](#get-apipoolspool_id)
+- [Cursor](#cursor)
+  - [Get indexer cursor](#get-apicursor)
+- [Error format](#error-format)
+
+---
+
+## Health
+
+### GET /health
+
+Returns `200 OK` when the indexer is running and the database connection is healthy.
+
+**Response**
 
 ```json
 {
-  "query": "string",
+  "status": "ok",
+  "ledger": 12345678
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `"ok"` | Always `"ok"` when the service is healthy |
+| `ledger` | `number` | Last fully indexed ledger sequence |
+
+---
+
+## Posts
+
+### POST /api/search/posts
+
+Full-text search over post content.
+
+**Request body**
+
+```json
+{
+  "query": "stellar soroban",
   "limit": 20,
   "offset": 0
 }
 ```
 
-**Parameters:**
-- `query` (required): Search keywords to match against post content
-- `limit` (optional): Maximum number of results to return (default: 20, max: 100)
-- `offset` (optional): Number of results to skip for pagination (default: 0)
+| Field | Type | Required | Default | Constraints |
+|-------|------|----------|---------|-------------|
+| `query` | `string` | yes | — | 1–200 characters |
+| `limit` | `number` | no | `20` | 1–100 |
+| `offset` | `number` | no | `0` | ≥ 0 |
 
-#### Response
+**Response `200`**
 
 ```json
 {
   "posts": [
     {
-      "id": "u64",
-      "author": "string",
-      "content": "string",
-      "tip_total": "string",
-      "timestamp": "u64"
+      "id": "42",
+      "author": "GABC...XYZ",
+      "content": "Building on Stellar with Soroban is great!",
+      "tip_total": "1000000000",
+      "like_count": 7,
+      "created_ledger": 12300000,
+      "deleted": false
     }
   ],
-  "total": "number",
-  "has_more": "boolean"
+  "total": 1,
+  "has_more": false
 }
 ```
 
-**Response Fields:**
-- `posts`: Array of matching posts
-- `total`: Total number of matching posts
-- `has_more`: Whether there are more results available
-
-#### Error Response
-
-```json
-{
-  "error": "string",
-  "code": "string"
-}
-```
-
-**Error Codes:**
-- `INVALID_QUERY`: Query parameter is missing or invalid
-- `LIMIT_EXCEEDED`: Limit parameter exceeds maximum allowed value
-- `INTERNAL_ERROR`: Server error occurred during search
+**Error codes:** `INVALID_QUERY`, `LIMIT_EXCEEDED`, `INTERNAL_ERROR`
 
 ---
 
-## Rate Limiting
+### GET /api/posts/:id
 
-All `/api` endpoints are subject to IP-based rate limiting.
+Fetch a single post by its numeric ID.
 
-### Default Limits
+**Path parameters**
 
-| Parameter | Default | Environment variable |
-|-----------|---------|----------------------|
-| Window | 60 seconds | `RATE_LIMIT_WINDOW_MS` |
-| Max requests per window | 100 | `RATE_LIMIT_MAX` |
+| Param | Type | Description |
+|-------|------|-------------|
+| `id` | `u64` | Post ID assigned by the contract |
 
-### Rate Limit Response
-
-When the limit is exceeded the server returns **HTTP 429 Too Many Requests** with a `Retry-After` header indicating how many seconds to wait before retrying.
-
-```
-HTTP/1.1 429 Too Many Requests
-Retry-After: 60
-Content-Type: application/json
-```
+**Response `200`**
 
 ```json
 {
-  "error": "Too many requests. Please retry after the indicated delay.",
-  "code": "RATE_LIMIT_EXCEEDED",
-  "retryAfterSeconds": 60
+  "id": "42",
+  "author": "GABC...XYZ",
+  "content": "Hello Linkora!",
+  "tip_total": "500000000",
+  "like_count": 3,
+  "created_ledger": 12200000,
+  "deleted": false,
+  "deleted_ledger": null
 }
 ```
 
-### Standard Rate-Limit Headers
+**Response `404`**
 
-Responses also include `RateLimit-*` headers (RFC 9110 draft-7) on every request:
-
-| Header | Description |
-|--------|-------------|
-| `RateLimit-Limit` | Maximum requests allowed per window |
-| `RateLimit-Remaining` | Requests remaining in the current window |
-| `RateLimit-Reset` | Unix timestamp when the current window resets |
-
-### Configuration
-
-Override defaults via environment variables before starting the indexer service:
-
-```bash
-# Allow 200 requests per 2-minute window
-RATE_LIMIT_MAX=200 RATE_LIMIT_WINDOW_MS=120000 node dist/index.js
+```json
+{
+  "error": "post not found",
+  "code": "NOT_FOUND"
+}
 ```
 
-Rate limiting is applied per originating IP address. When the service runs behind a reverse proxy, set `trust proxy` in the Express configuration and ensure only your load-balancer can set the `X-Forwarded-For` header.
+---
+
+### GET /api/posts/author/:address
+
+Paginated list of post IDs authored by a Stellar address.
+
+**Path parameters**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `address` | `string` | Stellar account address (`G...`) |
+
+**Query parameters**
+
+| Param | Type | Default | Constraints |
+|-------|------|---------|-------------|
+| `limit` | `number` | `20` | 1–50 |
+| `offset` | `number` | `0` | ≥ 0 |
+
+**Response `200`**
+
+```json
+{
+  "posts": ["41", "42", "55"],
+  "total": 3,
+  "has_more": false
+}
+```
+
+---
+
+## Profiles
+
+### GET /api/profiles/:address
+
+Fetch the profile registered for a Stellar address.
+
+**Response `200`**
+
+```json
+{
+  "address": "GABC...XYZ",
+  "username": "alice",
+  "creator_token": "CABC...TOKEN",
+  "updated_ledger": 12100000
+}
+```
+
+**Response `404`**
+
+```json
+{
+  "error": "profile not found",
+  "code": "NOT_FOUND"
+}
+```
+
+---
+
+### GET /api/profiles
+
+Paginated list of all registered profiles, ordered by `updated_ledger` descending.
+
+**Query parameters**
+
+| Param | Type | Default | Constraints |
+|-------|------|---------|-------------|
+| `limit` | `number` | `20` | 1–100 |
+| `offset` | `number` | `0` | ≥ 0 |
+
+**Response `200`**
+
+```json
+{
+  "profiles": [
+    {
+      "address": "GABC...XYZ",
+      "username": "alice",
+      "creator_token": "CABC...TOKEN",
+      "updated_ledger": 12100000
+    }
+  ],
+  "total": 1,
+  "has_more": false
+}
+```
+
+---
+
+## Social Graph
+
+### GET /api/social-graph/:address/following
+
+Paginated list of addresses that `:address` follows.
+
+**Query parameters**
+
+| Param | Type | Default | Constraints |
+|-------|------|---------|-------------|
+| `limit` | `number` | `20` | 1–50 |
+| `offset` | `number` | `0` | ≥ 0 |
+
+**Response `200`**
+
+```json
+{
+  "following": ["GBOB...XYZ", "GCAR...XYZ"],
+  "total": 2,
+  "has_more": false
+}
+```
+
+---
+
+### GET /api/social-graph/:address/followers
+
+Paginated list of addresses that follow `:address`.
+
+**Query parameters:** same as `/following`.
+
+**Response `200`**
+
+```json
+{
+  "followers": ["GDAVE...XYZ"],
+  "total": 1,
+  "has_more": false
+}
+```
+
+---
+
+## Tips
+
+### GET /api/posts/:id/tips
+
+Paginated tip history for a post.
+
+**Query parameters**
+
+| Param | Type | Default | Constraints |
+|-------|------|---------|-------------|
+| `limit` | `number` | `20` | 1–100 |
+| `offset` | `number` | `0` | ≥ 0 |
+
+**Response `200`**
+
+```json
+{
+  "tips": [
+    {
+      "id": "1",
+      "tipper": "GBOB...XYZ",
+      "post_id": "42",
+      "amount": "1000000000",
+      "fee": "25000000",
+      "ledger": 12300010,
+      "tx_hash": "abc123..."
+    }
+  ],
+  "total": 1,
+  "has_more": false
+}
+```
+
+---
+
+### GET /api/tips/sender/:address
+
+Paginated list of tips sent by an address.
+
+**Query parameters:** same as above.
+
+**Response `200`**
+
+```json
+{
+  "tips": [
+    {
+      "id": "1",
+      "tipper": "GBOB...XYZ",
+      "post_id": "42",
+      "amount": "1000000000",
+      "fee": "25000000",
+      "ledger": 12300010,
+      "tx_hash": "abc123..."
+    }
+  ],
+  "total": 1,
+  "has_more": false
+}
+```
+
+---
+
+## Pools
+
+### GET /api/pools/:pool_id
+
+Fetch the current state of a community pool.
+
+**Path parameters**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `pool_id` | `string` | Symbol identifier for the pool |
+
+**Response `200`**
+
+```json
+{
+  "pool_id": "CREATOR_FUND",
+  "token": "CABC...TOKEN",
+  "balance": "5000000000",
+  "updated_ledger": 12350000
+}
+```
+
+**Response `404`**
+
+```json
+{
+  "error": "pool not found",
+  "code": "NOT_FOUND"
+}
+```
+
+---
+
+## Cursor
+
+### GET /api/cursor
+
+Returns the indexer's current sync position.
+
+**Response `200`**
+
+```json
+{
+  "ledger_seq": 12345678,
+  "event_cursor": "0000004bc9db0000000200000000"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ledger_seq` | `number` | Last fully processed ledger |
+| `event_cursor` | `string` | Opaque RPC cursor for resuming |
+
+---
+
+## Error Format
+
+All error responses share the same shape:
+
+```json
+{
+  "error": "human-readable message",
+  "code": "MACHINE_READABLE_CODE"
+}
+```
+
+| Code | HTTP status | Meaning |
+|------|-------------|---------|
+| `NOT_FOUND` | 404 | Resource does not exist in the index |
+| `INVALID_QUERY` | 400 | Missing or malformed request parameter |
+| `LIMIT_EXCEEDED` | 400 | `limit` parameter exceeds the maximum |
+| `INTERNAL_ERROR` | 500 | Unexpected server error |

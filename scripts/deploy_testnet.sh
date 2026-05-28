@@ -6,10 +6,27 @@
 #   TREASURY_ADDRESS - Public address that receives protocol fees
 #   FEE_BPS          - Protocol fee in basis points (0–10000), defaults to 0
 #
+# Optional environment variables:
+#   NETWORK          - Stellar network to deploy to (default: testnet)
+#   CONTRACT_ID      - If set, skip deployment and use this existing contract ID
+#
 # Usage:
 #   ADMIN_SECRET=S... TREASURY_ADDRESS=G... FEE_BPS=250 ./scripts/deploy_testnet.sh
+#   ADMIN_SECRET=S... TREASURY_ADDRESS=G... ./scripts/deploy_testnet.sh --dry-run
+#   CONTRACT_ID=C... ADMIN_SECRET=S... TREASURY_ADDRESS=G... ./scripts/deploy_testnet.sh
 
 set -euo pipefail
+
+# ── Flags ─────────────────────────────────────────────────────────────────────
+
+DRY_RUN=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=true ;;
+    *) echo "error: unknown argument '$arg'" >&2; exit 1 ;;
+  esac
+done
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -22,13 +39,28 @@ WASM_PATH="$CONTRACT_DIR/target/wasm32v1-none/release/linkora_contracts.wasm"
 
 # ── Validate environment ───────────────────────────────────────────────────────
 
+MISSING_VARS=()
+
 if [[ -z "${ADMIN_SECRET:-}" ]]; then
-  echo "error: ADMIN_SECRET is required" >&2
-  exit 1
+  MISSING_VARS+=("ADMIN_SECRET")
 fi
 
 if [[ -z "${TREASURY_ADDRESS:-}" ]]; then
-  echo "error: TREASURY_ADDRESS is required" >&2
+  MISSING_VARS+=("TREASURY_ADDRESS")
+fi
+
+if [[ ${#MISSING_VARS[@]} -gt 0 ]]; then
+  echo "error: the following required environment variables are not set:" >&2
+  for var in "${MISSING_VARS[@]}"; do
+    echo "  - $var" >&2
+  done
+  echo "" >&2
+  echo "Usage: ADMIN_SECRET=S... TREASURY_ADDRESS=G... FEE_BPS=250 $0" >&2
+  exit 1
+fi
+
+if ! [[ "$FEE_BPS" =~ ^[0-9]+$ ]] || [[ "$FEE_BPS" -gt 10000 ]]; then
+  echo "error: FEE_BPS must be an integer between 0 and 10000 (got '$FEE_BPS')" >&2
   exit 1
 fi
 
@@ -38,17 +70,25 @@ if ! command -v stellar >/dev/null 2>&1; then
   exit 1
 fi
 
-# ── Build ─────────────────────────────────────────────────────────────────────
-
-echo "[1/3] Building contract WASM..."
-(
-  cd "$CONTRACT_DIR"
-  stellar contract build
-)
-
-if [[ ! -f "$WASM_PATH" ]]; then
-  echo "error: WASM artifact not found at $WASM_PATH" >&2
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "error: cargo is not installed" >&2
+  echo "  Install Rust from: https://rustup.rs" >&2
   exit 1
+fi
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "=== DRY RUN — no deployment will occur ==="
+  echo ""
+  echo "Configuration:"
+  echo "  NETWORK          = $NETWORK"
+  echo "  FEE_BPS          = $FEE_BPS"
+  echo "  TREASURY_ADDRESS = $TREASURY_ADDRESS"
+  echo "  CONTRACT_ID      = ${CONTRACT_ID:-(will be deployed fresh)}"
+  echo ""
+  echo "All required environment variables are set."
+  echo "stellar-cli and cargo are available."
+  echo "Dry run complete. Re-run without --dry-run to deploy."
+  exit 0
 fi
 
 # ── Import identity ───────────────────────────────────────────────────────────
@@ -59,19 +99,35 @@ trap 'rm -rf "$CFG_DIR"' EXIT
 stellar --config-dir "$CFG_DIR" keys add linkora_deployer --secret-key "$ADMIN_SECRET"
 ADMIN_ADDRESS="$(stellar --config-dir "$CFG_DIR" keys address linkora_deployer)"
 
-# ── Deploy ────────────────────────────────────────────────────────────────────
+# ── Skip or deploy ────────────────────────────────────────────────────────────
 
-echo "[2/3] Deploying contract to $NETWORK..."
-CONTRACT_ID="$(stellar --config-dir "$CFG_DIR" contract deploy \
-  --network "$NETWORK" \
-  --source-account linkora_deployer \
-  --wasm "$WASM_PATH")"
+if [[ -n "${CONTRACT_ID:-}" ]]; then
+  echo "[1/2] Skipping deployment — using existing CONTRACT_ID=$CONTRACT_ID"
+else
+  echo "[1/3] Building contract WASM..."
+  (
+    cd "$CONTRACT_DIR"
+    stellar contract build
+  )
 
-echo "  contract_id=$CONTRACT_ID"
+  if [[ ! -f "$WASM_PATH" ]]; then
+    echo "error: WASM artifact not found at $WASM_PATH" >&2
+    exit 1
+  fi
+
+  echo "[2/3] Deploying contract to $NETWORK..."
+  CONTRACT_ID="$(stellar --config-dir "$CFG_DIR" contract deploy \
+    --network "$NETWORK" \
+    --source-account linkora_deployer \
+    --wasm "$WASM_PATH")"
+
+  echo "  contract_id=$CONTRACT_ID"
+fi
 
 # ── Initialize ────────────────────────────────────────────────────────────────
 
-echo "[3/3] Initializing contract (admin=$ADMIN_ADDRESS, treasury=$TREASURY_ADDRESS, fee_bps=$FEE_BPS)..."
+INIT_STEP=$([[ -n "${CONTRACT_ID:-}" ]] && echo "2/2" || echo "3/3")
+echo "[$INIT_STEP] Initializing contract..."
 stellar --config-dir "$CFG_DIR" contract invoke \
   --network "$NETWORK" \
   --source-account linkora_deployer \
@@ -81,6 +137,15 @@ stellar --config-dir "$CFG_DIR" contract invoke \
     --treasury "$TREASURY_ADDRESS" \
     --fee-bps "$FEE_BPS"
 
+# ── Summary ───────────────────────────────────────────────────────────────────
+
 echo ""
-echo "Deployment complete."
-echo "contract_id=$CONTRACT_ID"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║               Deployment Summary                            ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+printf  "║  %-20s %-38s ║\n" "network:"       "$NETWORK"
+printf  "║  %-20s %-38s ║\n" "contract_id:"   "$CONTRACT_ID"
+printf  "║  %-20s %-38s ║\n" "admin:"         "$ADMIN_ADDRESS"
+printf  "║  %-20s %-38s ║\n" "treasury:"      "$TREASURY_ADDRESS"
+printf  "║  %-20s %-38s ║\n" "fee_bps:"       "$FEE_BPS"
+echo "╚══════════════════════════════════════════════════════════════╝"

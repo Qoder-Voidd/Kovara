@@ -1,0 +1,107 @@
+# GitHub issue & PR label definitions for Linkora-socials.
+#
+# Synced to the repository with `make labels` (uses github-label-sync).
+# Any label that exists on GitHub but is NOT listed here will be removed,
+# so this file is the single source of truth for our labels.
+#
+# Color scheme (one hue per category, hex without the leading '#'):
+#   Platform            -> 1d76db (blue)    where the work runs
+#   Engineering domain  -> 5319e7 (purple)  which codebase/layer is affected
+#   Quality & process   -> d93f0b (red)     cross-cutting quality concerns
+#   Product feature      -> 0e8a16 (green)   user-facing feature areas
+#   Experience          -> d4c5f9 (lilac)   look, feel and inclusivity
+#   Triage & meta       -> assorted GitHub-standard colors for workflow labels
+
+# --- Platform (blue) -------------------------------------------------------
+- name: mobile
+  color: 1d76db
+  description: Mobile application work
+
+- name: web
+  color: 1d76db
+  description: Web application work
+
+- name: mini-apps
+  color: 1d76db
+  description: Mini-apps platform work
+
+# --- Engineering domain (purple) ------------------------------------------
+- name: contracts
+  color: 5319e7
+  description: Smart contract package and tooling
+
+- name: smart-contract
+  color: 5319e7
+  description: On-chain smart contract logic
+
+- name: sdk
+  color: 5319e7
+  description: SDK package and client libraries
+
+- name: indexer
+  color: 5319e7
+  description: Indexer and data ingestion
+
+# --- Quality & process (red) ----------------------------------------------
+- name: testing
+  color: d93f0b
+  description: Tests, test infrastructure and coverage
+
+- name: documentation
+  color: d93f0b
+  description: Documentation additions and improvements
+
+- name: security
+  color: d93f0b
+  description: Security-related issues and hardening
+
+# --- Product feature areas (green) ----------------------------------------
+- name: wallet
+  color: 0e8a16
+  description: Wallet feature area
+
+- name: feed
+  color: 0e8a16
+  description: Feed feature area
+
+- name: profile
+  color: 0e8a16
+  description: Profile feature area
+
+- name: pools
+  color: 0e8a16
+  description: Pools feature area
+
+- name: explore
+  color: 0e8a16
+  description: Explore feature area
+
+# --- Experience (lilac) ---------------------------------------------------
+- name: UX
+  color: d4c5f9
+  description: User experience and design
+
+- name: accessibility
+  color: d4c5f9
+  description: Accessibility (a11y) improvements
+
+# --- Triage & meta --------------------------------------------------------
+- name: developer experience
+  color: c5def5
+  description: Tooling and workflow for contributors
+
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers
+
+- name: help wanted
+  color: 008672
+  description: Extra attention is needed
+
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+
+- name: bug
+  color: d73a4a
+  description: Something isn't working

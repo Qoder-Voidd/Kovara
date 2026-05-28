@@ -1,0 +1,75 @@
+# Dependabot configuration
+#
+# Keeps dependencies up to date automatically. Dependabot opens grouped pull
+# requests on a weekly cadence; patch-level updates that pass CI are merged
+# automatically by .github/workflows/dependabot-auto-merge.yml.
+#
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # ── npm (JavaScript / TypeScript) ───────────────────────────────────────────
+  # Covers the workspace root and every package/app that ships a package.json.
+  # apps/mobile and services/indexer are listed ahead of their creation so they
+  # are monitored as soon as a manifest lands.
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/packages/web"
+      - "/packages/sdk"
+      - "/apps/web"
+      - "/apps/mobile"
+      - "/services/indexer"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "npm"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    # Group updates into a single PR per ecosystem to reduce noise.
+    groups:
+      npm-production:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-development:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ── Cargo (Rust smart contracts) ────────────────────────────────────────────
+  - package-ecosystem: "cargo"
+    directory: "/packages/contracts"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo:
+        patterns:
+          - "*"
+
+  # ── GitHub Actions (CI workflows) ───────────────────────────────────────────
+  # The github-actions ecosystem scans .github/workflows/ from the repo root.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

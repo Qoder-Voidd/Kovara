@@ -788,6 +788,44 @@ fn test_pool_deposit_wrong_token_rejected() {
 }
 
 #[test]
+fn test_pool_deposit_correct_token_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let pool_admin = Address::generate(&env);
+    let other_user = Address::generate(&env);
+    let token = setup_token(&env, &pool_admin);
+
+    // Give other_user some tokens to deposit
+    StellarAssetClient::new(&env, &token).mint(&other_user, &1000);
+
+    let pool_id = symbol_short!("pool5");
+    // Create pool with the matching token
+    client.create_pool(
+        &admin,
+        &pool_id,
+        &token,
+        &vec![&env, pool_admin.clone()],
+        &1,
+    );
+
+    // Pool starts empty
+    assert_eq!(client.get_pool(&pool_id).unwrap().balance, 0);
+
+    // Depositing with the correct token succeeds
+    client.pool_deposit(&other_user, &pool_id, &token, &100);
+
+    // Pool balance is updated and tokens were transferred into the contract
+    assert_eq!(client.get_pool(&pool_id).unwrap().balance, 100);
+    assert_eq!(TokenClient::new(&env, &token).balance(&other_user), 900);
+
+    // A second deposit accumulates on the existing balance
+    client.pool_deposit(&other_user, &pool_id, &token, &50);
+    assert_eq!(client.get_pool(&pool_id).unwrap().balance, 150);
+}
+
+#[test]
 fn test_sequential_posts() {
     let env = Env::default();
     env.mock_all_auths();

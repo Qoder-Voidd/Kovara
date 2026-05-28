@@ -286,6 +286,30 @@ The `.github/CODEOWNERS` file maps directories to their maintainers:
 
 3. For urgent reviews or specific questions, you can also comment on the PR with a mention.
 
+## Dependency Updates
+
+Dependencies are kept current automatically by [Dependabot](https://docs.github.com/code-security/dependabot), configured in [`.github/dependabot.yml`](.github/dependabot.yml).
+
+### What is covered
+
+| Ecosystem | Locations |
+| --- | --- |
+| `npm` | repo root, `packages/web`, `packages/sdk`, `apps/web`, `apps/mobile`, `services/indexer` |
+| `cargo` | `packages/contracts` |
+| `github-actions` | `.github/workflows/` |
+
+> `apps/mobile` and `services/indexer` are listed ahead of their creation, so they start receiving updates as soon as a manifest is added.
+
+### How it works
+
+- **Weekly cadence:** Dependabot checks each ecosystem once a week and opens PRs for outdated dependencies.
+- **Grouped PRs:** updates are grouped per ecosystem (and split into production/development for npm) so reviewers see one PR instead of many, reducing noise.
+- **Auto-merge for patches:** the [`dependabot-auto-merge`](.github/workflows/dependabot-auto-merge.yml) workflow enables auto-merge for `semver-patch` updates. GitHub only merges them **after required CI checks pass** — a failing build keeps the PR open for manual review. Minor and major updates always require a manual review and merge.
+
+### Reviewing Dependabot PRs
+
+Treat Dependabot PRs like any other change: confirm CI is green, skim the changelog for the bumped dependency, and merge minor/major updates manually once you are confident they are safe.
+
 ## Security
 
 If you discover a security vulnerability, please review our [Security Policy](SECURITY.md) for responsible disclosure guidelines. Do not open public issues for security concerns.

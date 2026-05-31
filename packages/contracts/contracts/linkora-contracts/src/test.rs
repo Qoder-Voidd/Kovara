@@ -1697,6 +1697,26 @@ fn test_pool_withdraw_event_emitted() {
 }
 
 #[test]
+fn test_pool_deposit_event_emitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Start with an empty pool so the only deposit is the one under test.
+    let (client, _, pool_id, token, _) = setup_pool(&env, 2, 2, 0);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &500);
+
+    let events_before = env.events().all().events().len();
+    client.pool_deposit(&depositor, &pool_id, &token, &100);
+
+    // The deposit must add at least one event (the PoolDepositEvent).
+    assert!(
+        env.events().all().events().len() > events_before,
+        "deposit must emit at least one event"
+    );
+}
+
+#[test]
 #[should_panic(expected = "insufficient signers")]
 fn test_pool_withdraw_m_of_n_fewer_than_threshold_rejected() {
     // With a 3-of-5 threshold, providing only 2 signers must fail.

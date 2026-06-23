@@ -529,6 +529,26 @@ fn test_follow_and_unfollow() {
 }
 
 #[test]
+fn test_duplicate_follow_only_one_record() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    // First follow should add the relationship
+    client.follow(&alice, &bob);
+    assert_eq!(client.get_following(&alice, &0, &10).len(), 1);
+    assert_eq!(client.get_followers(&bob, &0, &10).len(), 1);
+
+    // Following again should be a no-op and not create duplicates
+    client.follow(&alice, &bob);
+    assert_eq!(client.get_following(&alice, &0, &10).len(), 1);
+    assert_eq!(client.get_followers(&bob, &0, &10).len(), 1);
+}
+
+#[test]
 fn test_block_prevents_follow() {
     let env = Env::default();
     env.mock_all_auths();

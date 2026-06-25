@@ -477,17 +477,6 @@ impl KovaraContract {
             .persistent()
             .remove(&StorageKey::UsernameIndex(profile.username));
         env.storage().persistent().remove(&key);
-
-        let count: u64 = env
-            .storage()
-            .instance()
-            .get(&PROFILE_CREATED_CT)
-            .unwrap_or(0);
-        if count > 0 {
-            env.storage()
-                .instance()
-                .set(&PROFILE_CREATED_CT, &(count - 1));
-        }
     }
 
     pub fn get_address_by_username(env: Env, username: String) -> Option<Address> {

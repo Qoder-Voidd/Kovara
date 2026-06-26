@@ -108,13 +108,16 @@ docker compose down -v
 
 See [`.env.example`](.env.example) for all required variables.
 
-| Variable          | Description                            |
-| ----------------- | -------------------------------------- |
-| `DATABASE_URL`    | PostgreSQL connection string           |
-| `STELLAR_RPC_URL` | Soroban RPC endpoint                   |
-| `CONTRACT_ID`     | Deployed Kovara contract address       |
-| `START_LEDGER`    | Ledger sequence to start indexing from |
-| `PORT`            | API port (default: `3000`)             |
+| Variable               | Description                            |
+| ---------------------- | -------------------------------------- |
+| `DATABASE_URL`         | PostgreSQL connection string           |
+| `STELLAR_RPC_URL`      | Soroban RPC endpoint                   |
+| `CONTRACT_ID`          | Deployed Kovara contract address       |
+| `START_LEDGER`         | Ledger sequence to start indexing from |
+| `PORT`                 | API port (default: `3000`)             |
+| `RATE_LIMIT_WINDOW_MS` | Rate-limit window in ms (default: 60000) |
+| `RATE_LIMIT_MAX`       | Max requests per window (default: 100) |
+| `CORS_ORIGIN`          | Allowed CORS origin(s) (default: all)  |
 
 ## Manual Setup
 
@@ -135,6 +138,7 @@ npm install
 # Apply migrations manually
 psql "$DATABASE_URL" -f migrations/001_profiles.sql
 psql "$DATABASE_URL" -f migrations/002_posts.sql
+psql "$DATABASE_URL" -f migrations/003_follows.sql
 psql "$DATABASE_URL" -f migrations/004_tips_likes.sql
 psql "$DATABASE_URL" -f migrations/005_pools.sql
 ```
@@ -181,6 +185,68 @@ All event handlers are designed to be idempotent:
 
 This ensures the indexer can safely replay events without data corruption.
 
+## CORS
+
+The API uses the [`cors`](https://www.npmjs.com/package/cors) middleware and allows
+all origins by default. To restrict access in production, set the `CORS_ORIGIN`
+environment variable:
+
+```bash
+# Allow a single origin
+CORS_ORIGIN=https://app.example.com
+
+# Allow multiple origins (comma-separated)
+CORS_ORIGIN=https://app.example.com,https://admin.example.com
+```
+
+When `CORS_ORIGIN` is not set, all origins are permitted (useful during development).
+See `.env.example` for the full list of environment variables.
+
+## Rate Limiting
+
+All `/api/*` routes are protected by a rate limiter (express-rate-limit). The
+default window is 60 seconds with 100 requests per IP. Configurable via:
+
+| Variable               | Default | Description                          |
+| ---------------------- | ------- | ------------------------------------ |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Window duration in milliseconds      |
+| `RATE_LIMIT_MAX`       | `100`   | Maximum requests per window per IP   |
+
+When the limit is exceeded, the API returns `429 Too Many Requests` with a
+`Retry-After` header and a JSON body containing `RATE_LIMIT_EXCEEDED`.
+
+## Full-Text Search
+
+Search across indexed post content:
+
+```bash
+curl -X POST http://localhost:3000/api/search/posts \
+  -H "Content-Type: application/json" \
+  -d '{"query": "stellar", "limit": 10, "offset": 0}'
+```
+
+The search uses PostgreSQL full-text search (`tsvector`/`tsquery`) for efficient
+content matching. Results include `id`, `author`, `content`, `tip_total`,
+`like_count`, and `created_ledger`.
+
+## Token Metadata Enrichment
+
+Pool responses include optional token metadata when available:
+
+```json
+{
+  "pool_id": "...",
+  "token": "GABCD...",
+  "token_name": "Kovara Token",
+  "token_symbol": "KOVA",
+  "token_decimals": 7,
+  ...
+}
+```
+
+Metadata is fetched via the `getTokenMetadata` database method, which can be
+populated from on-chain contract data or a supplementary table.
+
 ## Monitoring
 
 ### Health Check
@@ -188,6 +254,8 @@ This ensures the indexer can safely replay events without data corruption.
 ```bash
 curl http://localhost:3000/health
 ```
+
+Returns `200 OK` with `{ "status": "ok", "uptime": <seconds> }`.
 
 ### Metrics
 

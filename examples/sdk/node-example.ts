@@ -17,11 +17,44 @@ const CONFIG = {
 const mockSignerKeypair = Keypair.random();
 const mockSourceAddress = mockSignerKeypair.publicKey();
 
-async function runNodeExample() {
+/**
+ * Normalizes unknown errors into KovaraError instances for consistent handling.
+ * @param err - The caught error object
+ * @returns A KovaraError instance
+ */
+function normalizeError(err: unknown): KovaraError {
+  return err instanceof KovaraError ? err : new KovaraError(String(err));
+}
+
+/**
+ * Validates the configuration object has required fields.
+ * @param config - The configuration object to validate
+ * @throws Error if configuration is invalid
+ */
+function validateConfig(config: typeof CONFIG): void {
+  if (!config.rpcUrl) {
+    throw new Error("Configuration error: rpcUrl is required");
+  }
+  if (!config.networkPassphrase) {
+    throw new Error("Configuration error: networkPassphrase is required");
+  }
+  if (!config.contractId) {
+    throw new Error("Configuration error: contractId is required");
+  }
+}
+
+/**
+ * Demonstrates Kovara SDK usage for on-chain operations.
+ * Includes profile fetching, post count retrieval, and post creation.
+ */
+async function runNodeExample(): Promise<void> {
   console.log("=== Kovara SDK Node.js Run-Time Example ===");
   console.log(`Connecting to RPC Endpoint: ${CONFIG.rpcUrl}`);
   console.log(`Contract ID: ${CONFIG.contractId}`);
-  console.log(`Client Address: ${mockSourceAddress}\n`);
+  console.log(`Client Address: ${mockSourceAddress}\n");
+
+  // Validate configuration before proceeding
+  validateConfig(CONFIG);
 
   // 1. Initialize KovaraClient
   const client = new KovaraClient(CONFIG);
@@ -40,7 +73,7 @@ async function runNodeExample() {
     } catch (err) {
       console.log("   ✕ Profile fetch simulated.");
       // Expected error: NotFoundError when profile doesn't exist or contract not initialized
-      const error = err instanceof KovaraError ? err : new KovaraError(String(err));
+      const error = normalizeError(err);
       console.log(
         `     Note: No deployed/initialized contract instance found at this address on Testnet: "${error.message}"\n`
       );
@@ -54,7 +87,7 @@ async function runNodeExample() {
     } catch (err) {
       console.log("   ✕ Post count fetch simulated.");
       // Expected error: NotFoundError or KovaraError when contract not initialized
-      const error = err instanceof KovaraError ? err : new KovaraError(String(err));
+      const error = normalizeError(err);
       console.log(
         `     Note: Could not fetch post count (uninitialized contract state): "${error.message}"\n`
       );
@@ -82,7 +115,7 @@ async function runNodeExample() {
     } catch (txErr) {
       console.log("   ✕ Post transaction simulation completed.");
       // Expected error: InsufficientBalanceError when mock keypair lacks XLM for gas fees
-      const error = txErr instanceof KovaraError ? txErr : new KovaraError(String(txErr));
+      const error = normalizeError(txErr);
       console.log("     Note: Since the mock keypair does not have funded XLM to pay gas fees,");
       console.log(`     the execution failed as expected: "${error.message}"\n`);
     }
@@ -90,7 +123,7 @@ async function runNodeExample() {
     console.log("=== Node.js Example Execution Completed Successfully ===");
   } catch (err) {
     // Catch-all for unexpected SDK errors
-    const error = err instanceof KovaraError ? err : new KovaraError(String(err));
+    const error = normalizeError(err);
     console.error("✕ Kovara SDK Runtime Error:", error.message);
     process.exit(1);
   }
@@ -98,7 +131,11 @@ async function runNodeExample() {
 
 // ── Mini-App Manifest Validation Example ───────────────────────────────────────
 
-async function demonstrateManifestValidation() {
+/**
+ * Demonstrates mini-app manifest validation with various test cases.
+ * Shows valid and invalid manifest scenarios to guide developers.
+ */
+async function demonstrateManifestValidation(): Promise<void> {
   console.log("\n=== Mini-App Manifest Validation Example ===");
 
   // Example 1: Valid tip-jar manifest (SDK-compliant)
@@ -161,8 +198,60 @@ async function demonstrateManifestValidation() {
     console.log(`     Error: ${error.message}\n`);
   }
 
-  // Example 4: Load and validate from JSON file (if file exists)
-  console.log("4. Loading and validating manifest from file...");
+  // Example 4: Invalid manifest (missing required fields)
+  console.log("4. Validating manifest with missing required fields (should fail)...");
+  const missingFieldsManifest = {
+    name: "Tip Jar",
+    // Missing version, entryPoint, and permissions
+  };
+
+  try {
+    validateManifest(missingFieldsManifest);
+    console.log("   ✕ Manifest should have failed validation but passed!\n");
+  } catch (err) {
+    const error = err instanceof InvalidManifestError ? err : new InvalidManifestError(String(err));
+    console.log("   ✓ Validation correctly rejected manifest with missing fields:");
+    console.log(`     Error: ${error.message}\n`);
+  }
+
+  // Example 5: Invalid manifest (invalid semver)
+  console.log("5. Validating manifest with invalid semver version (should fail)...");
+  const invalidSemverManifest = {
+    name: "Tip Jar",
+    version: "v1.0", // Invalid: should be MAJOR.MINOR.PATCH format
+    entryPoint: "https://example.com/tip-jar/index.html",
+    permissions: ["wallet.read"],
+  };
+
+  try {
+    validateManifest(invalidSemverManifest);
+    console.log("   ✕ Manifest should have failed validation but passed!\n");
+  } catch (err) {
+    const error = err instanceof InvalidManifestError ? err : new InvalidManifestError(String(err));
+    console.log("   ✓ Validation correctly rejected invalid semver:");
+    console.log(`     Error: ${error.message}\n`);
+  }
+
+  // Example 6: Invalid manifest (empty permissions array)
+  console.log("6. Validating manifest with empty permissions array (should fail)...");
+  const emptyPermissionsManifest = {
+    name: "Tip Jar",
+    version: "1.0.0",
+    entryPoint: "https://example.com/tip-jar/index.html",
+    permissions: [], // Must have at least one permission
+  };
+
+  try {
+    validateManifest(emptyPermissionsManifest);
+    console.log("   ✕ Manifest should have failed validation but passed!\n");
+  } catch (err) {
+    const error = err instanceof InvalidManifestError ? err : new InvalidManifestError(String(err));
+    console.log("   ✓ Validation correctly rejected empty permissions:");
+    console.log(`     Error: ${error.message}\n`);
+  }
+
+  // Example 7: Load and validate from JSON file (if file exists)
+  console.log("7. Loading and validating manifest from file...");
   try {
     const manifestPath = join(process.cwd(), "examples/mini-apps/tip-jar/linkora-manifest.json");
     const manifestContent = readFileSync(manifestPath, "utf-8");
@@ -189,8 +278,10 @@ async function demonstrateManifestValidation() {
   console.log("=== Manifest Validation Example Completed ===");
 }
 
-// Execute both examples
-async function runAllExamples() {
+/**
+ * Orchestrates execution of all example demonstrations.
+ */
+async function runAllExamples(): Promise<void> {
   await runNodeExample();
   await demonstrateManifestValidation();
 }
